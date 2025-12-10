@@ -9,15 +9,15 @@ Gemini 对话大纲与宽屏工具：为 Google Gemini 提供沉浸式宽屏阅�
 
 ## 如何使用？
 
-- clone项目到本地
-- chrome地址输入`chrome://extensions/`
-- 右侧**开发者模式**开启
-- 左侧选择**加载未打包的扩展程序**
-- 选择clone项目到本地的**项目文件夹**
+
+- [下载已发布的zip](https://github.com/Juna3066/gemini-read-enhance-plugin/releases/tag/v2.7.0)
+- 进入**扩展程序页面**（chrome地址输入`chrome://extensions/`）
+- 开启右侧**开发者模式**
+- 把下载zip包拖进**扩展程序页面**
 
 ## 配合SingleFile插件使用（可选）
 
-- chrome地址栏输入`chrome://extensions/`
+- 进入**扩展程序页面**（chrome地址输入`chrome://extensions/`）
 - 点击Gemini Read Enhance插件**详情**
 - 开启**允许访问文件网址**
 - 点击SingleFile插件**详情**
