@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Read Enhance",
+  "version": "2.7.0",
+  "author": "Juna3066",
+  "description": "Gemini 对话大纲与宽屏工具：为 Google Gemini 提供沉浸式宽屏阅读体验，并自动生成侧边栏对话大纲，支持一键导航与自定义宽度。",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://gemini.google.com/*",
+        "file:///*"
+      ],
+      "css": ["styles.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage" 
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "file:///*"
+  ]
+}
