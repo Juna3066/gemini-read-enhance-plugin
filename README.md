@@ -24,8 +24,12 @@ Gemini 对话大纲与宽屏工具：为 Google Gemini 提供沉浸式宽屏阅�
 - 点击**扩展程序选项**
 - 点击**HTML内容**
 - 【必须】在**移除特定元素**框添加
-    `#my-gemini-toc`
+    ~~~
+    #my-gemini-toc
+    ~~~
 - 【可选】在**文件名**模板框添加
-    `%if-empty<%page-element-text<span.conversation-title>|{page-title}|NoTitle>-{date-iso}-{hours-locale}-{minutes-locale}-{seconds-locale}.{filename-extension}`
+    ~~~
+    %if-empty<%page-element-text<span.conversation-title>|{page-title}|NoTitle>-{date-iso}-{hours-locale}-{minutes-locale}-{seconds-locale}.{filename-extension}
+    ~~~
 - 网页Gemini对话页面-右键-SingleFile-使用SingleFile保存页面
 - 浏览器打开本地**已保存页面**查看
