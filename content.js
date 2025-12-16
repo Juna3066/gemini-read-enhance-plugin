@@ -1,8 +1,7 @@
-// content.js
+// content.js - Ultimate Performance Version
 
 // --- 1. 常量与配置 ---
 const SELECTORS = {
-    // 页面元素选择器（集中管理，便于维护）
     QUERY_CONTAINER: 'span.user-query-container',
     SIDEBAR_ID: 'my-gemini-toc',
     LIST_ID: 'toc-list'
@@ -27,18 +26,29 @@ const ICONS = {
     reset: `↺`
 };
 
-// --- 2. 工具函数 ---
+// --- 2. 高级工具函数 ---
 
-// 防抖函数：减少 MutationObserver 带来的频繁调用
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), wait);
+// [优化] 文本提取：使用 textContent 避免回流
+function extractText(element) {
+    return element.textContent.replace(/[\r\n\s]+/g, ' ').trim();
+}
+
+// [优化] 空闲调度防抖：优先使用 requestIdleCallback
+function idleDebounce(func, wait) {
+    let timerId = null;
+    return (...args) => {
+        if (timerId) clearTimeout(timerId);
+        timerId = setTimeout(() => {
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(() => func.apply(this, args));
+            } else {
+                func.apply(this, args);
+            }
+        }, wait);
     };
 }
 
-// --- 3. UI 构建逻辑 ---
+// --- 3. UI 构建 ---
 function createSidebar() {
     if (document.getElementById(SELECTORS.SIDEBAR_ID)) return;
 
@@ -87,6 +97,7 @@ function createSidebar() {
     bindEvents();
 }
 
+// --- 4. 事件绑定 (含 Event Delegation) ---
 function bindEvents() {
     const sidebar = document.getElementById(SELECTORS.SIDEBAR_ID);
     const settingsPanel = document.getElementById('settings-panel');
@@ -104,11 +115,10 @@ function bindEvents() {
         btnSettings.classList.toggle('active', CONFIG.isSettingsOpen);
     };
 
-    // 最小化/展开
+    // 最小化
     const toggleFunc = (e) => {
         e && e.stopPropagation();
         CONFIG.isMinimized = !CONFIG.isMinimized;
-        
         if (CONFIG.isMinimized) {
             sidebar.classList.add('minimized');
             btnToggle.innerHTML = ICONS.expand; 
@@ -122,7 +132,7 @@ function bindEvents() {
     btnToggle.onclick = toggleFunc;
     sidebar.onclick = (e) => { if (CONFIG.isMinimized) toggleFunc(e); };
 
-    // 正文宽度
+    // 宽度调整
     const updateContent = (val) => {
         valContent.innerText = val + '%';
         applyContentWidth(val);
@@ -135,7 +145,6 @@ function bindEvents() {
         updateContent(DEFAULTS.contentWidth);
     };
 
-    // 侧栏宽度
     const updateSidebar = (val) => {
         valSidebar.innerText = val + 'px';
         applySidebarWidth(val);
@@ -146,6 +155,27 @@ function bindEvents() {
     document.getElementById('reset-sidebar').onclick = () => {
         sliderSidebar.value = DEFAULTS.sidebarWidth;
         updateSidebar(DEFAULTS.sidebarWidth);
+    };
+
+    // [优化] 列表点击使用事件委托 (Event Delegation)
+    const listContainer = document.getElementById(SELECTORS.LIST_ID);
+    listContainer.onclick = (e) => {
+        const item = e.target.closest('.toc-item');
+        if (!item) return;
+
+        const index = parseInt(item.dataset.index);
+        const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
+        const targetElement = userQueries[index];
+
+        if (targetElement && targetElement.isConnected) {
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetElement.style.transition = 'background 0.5s';
+            targetElement.style.backgroundColor = 'rgba(255, 235, 59, 0.2)'; 
+            setTimeout(() => { targetElement.style.backgroundColor = 'transparent'; }, 1200);
+        } else {
+            // 目标丢失，强制刷新
+            updateToc();
+        }
     };
 }
 
@@ -164,48 +194,37 @@ function applySidebarWidth(widthPx) {
     }
 }
 
-// --- 4. 核心功能：大纲生成 (已修复跳动 Bug) ---
+// --- 5. 核心大纲逻辑 (极致优化版) ---
 function updateToc() {
     const listContainer = document.getElementById(SELECTORS.LIST_ID);
     if (!listContainer) return;
 
     const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
 
-    // --- 1. 空状态处理 (导航到非对话页面) ---
+    // 1. 处理空状态
     if (userQueries.length === 0) {
-        if (listContainer.children.length > 0) {
-            listContainer.innerHTML = ''; // 只有确实有内容时才清空，避免无意义操作
-        }
+        if (listContainer.children.length > 0) listContainer.innerHTML = '';
         return;
     }
 
-    // --- 2. 极速初筛 (基于长度) ---
+    // 2. 智能 Diff 检测
     const currentItems = listContainer.children;
     let shouldUpdate = false;
-    let newTexts = null; // 惰性生成
+    let newTexts = null;
 
     if (currentItems.length !== userQueries.length) {
         shouldUpdate = true;
     } else {
-        // --- 3. 深度检查 (长度一致，检查内容和活性) ---
-        // 只有长度一致时，才值得花算力去提取文本
-        newTexts = Array.from(userQueries).map(q => 
-            q.innerText.replace(/[\r\n\s]+/g, ' ').trim()
-        ).filter(t => t.length > 0);
+        // [优化] 使用 extractText
+        newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
 
-        // 如果过滤后长度不一致（说明有空内容），那也得更新
         if (newTexts.length !== currentItems.length) {
             shouldUpdate = true;
         } else {
-            // 内容比对
             const currentTexts = Array.from(currentItems).map(item => item.dataset.rawText || "");
             const isContentSame = currentTexts.every((t, i) => t === newTexts[i]);
-            
-            // 活性检测 (Zombie Check): 检查第一个元素是否还连接在 DOM 树上
-            // 只要第一个断了，通常说明整个 React/Angular 根节点都换了，全部需要重绘
-            const isDomAlive = currentItems[0]?.targetElement?.isConnected;
+            const isDomAlive = userQueries[0].isConnected; // 活性检测
 
-            // 如果内容变了，或者节点“死”了，就更新
             if (!isContentSame || !isDomAlive) {
                 shouldUpdate = true;
             }
@@ -217,50 +236,31 @@ function updateToc() {
         return;
     }
 
-    // --- 4. 重绘逻辑 (使用 Fragment 优化性能) ---
-    
-    // 如果 newTexts 还没生成过（因为前面走了长度不一致的快速分支），现在生成
+    // 3. 执行重绘
     if (!newTexts) {
-        newTexts = Array.from(userQueries).map(q => 
-            q.innerText.replace(/[\r\n\s]+/g, ' ').trim()
-        ).filter(t => t.length > 0);
+        newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
     }
 
     const previousScrollTop = listContainer.scrollTop;
     const isUserAtBottom = (listContainer.scrollHeight - listContainer.scrollTop - listContainer.clientHeight) < 20;
 
     listContainer.innerHTML = ''; 
-
-    // 【核心优化】创建文档片段，内存中操作，不触发布局抖动
+    
+    // [优化] 使用 DocumentFragment
     const fragment = document.createDocumentFragment();
 
     newTexts.forEach((cleanText, index) => {
-        const queryElement = userQueries[index]; 
-        if (!queryElement) return;
-
         const item = document.createElement('div');
         item.className = 'toc-item';
+        // [优化] 使用 textContent
         item.textContent = `${index + 1}. ${cleanText}`; 
-        item.title = queryElement.innerText; 
+        item.title = cleanText; 
         item.dataset.rawText = cleanText; 
-        item.targetElement = queryElement; // 挂载引用
+        item.dataset.index = index; // 供事件委托使用
 
-        item.onclick = () => {
-            if (queryElement && queryElement.isConnected) {
-                queryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                queryElement.style.transition = 'background 0.5s';
-                queryElement.style.backgroundColor = 'rgba(255, 235, 59, 0.2)'; 
-                setTimeout(() => { queryElement.style.backgroundColor = 'transparent'; }, 1200);
-            } else {
-                // 元素失效，强制刷新一次
-                updateToc();
-            }
-        };
-        
-        fragment.appendChild(item); // 插入片段，零重绘
+        fragment.appendChild(item);
     });
     
-    // 【核心优化】一次性上树
     listContainer.appendChild(fragment); 
     
     if (isUserAtBottom) {
@@ -272,21 +272,18 @@ function updateToc() {
     applyContentWidth(CONFIG.contentWidth);
 }
 
-// --- 5. 初始化 ---
+// --- 6. 初始化 ---
 function init() {
     createSidebar();
     
-    // 使用防抖版 Update，避免高频触发
-    const debouncedUpdate = debounce(updateToc, 1000);
+    // [优化] 使用空闲防抖
+    const efficientUpdate = idleDebounce(updateToc, 1000);
 
-    // 1. 针对本地文件/超快网速：立即尝试
     setTimeout(updateToc, 500); 
-    // 2. 针对普通加载：常规兜底
     setTimeout(updateToc, 2000);
 
-    // 3. 针对动态交互：监听变化 (传入防抖函数)
     const observer = new MutationObserver(() => {
-        debouncedUpdate();
+        efficientUpdate();
     });
     observer.observe(document.body, { childList: true, subtree: true });
 }
