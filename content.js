@@ -170,36 +170,69 @@ function updateToc() {
     if (!listContainer) return;
 
     const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
-    if (userQueries.length === 0) return;
 
-    // A. 预先检查：长度是否变化 (快速筛选)
+    // --- 1. 空状态处理 (导航到非对话页面) ---
+    if (userQueries.length === 0) {
+        if (listContainer.children.length > 0) {
+            listContainer.innerHTML = ''; // 只有确实有内容时才清空，避免无意义操作
+        }
+        return;
+    }
+
+    // --- 2. 极速初筛 (基于长度) ---
     const currentItems = listContainer.children;
-    // 如果长度不同，肯定变了，直接进入重绘流程
-    // 如果长度相同，继续检查内容
-    if (currentItems.length === userQueries.length) {
-        const newTexts = Array.from(userQueries).map(q => 
+    let shouldUpdate = false;
+    let newTexts = null; // 惰性生成
+
+    if (currentItems.length !== userQueries.length) {
+        shouldUpdate = true;
+    } else {
+        // --- 3. 深度检查 (长度一致，检查内容和活性) ---
+        // 只有长度一致时，才值得花算力去提取文本
+        newTexts = Array.from(userQueries).map(q => 
             q.innerText.replace(/[\r\n\s]+/g, ' ').trim()
-        );
-        const currentTexts = Array.from(currentItems).map(item => item.dataset.rawText || "");
-        
-        const isSame = currentTexts.every((t, i) => t === newTexts[i]);
-        if (isSame) {
-            applyContentWidth(CONFIG.contentWidth);
-            return; // 内容完全一致，静止不动
+        ).filter(t => t.length > 0);
+
+        // 如果过滤后长度不一致（说明有空内容），那也得更新
+        if (newTexts.length !== currentItems.length) {
+            shouldUpdate = true;
+        } else {
+            // 内容比对
+            const currentTexts = Array.from(currentItems).map(item => item.dataset.rawText || "");
+            const isContentSame = currentTexts.every((t, i) => t === newTexts[i]);
+            
+            // 活性检测 (Zombie Check): 检查第一个元素是否还连接在 DOM 树上
+            // 只要第一个断了，通常说明整个 React/Angular 根节点都换了，全部需要重绘
+            const isDomAlive = currentItems[0]?.targetElement?.isConnected;
+
+            // 如果内容变了，或者节点“死”了，就更新
+            if (!isContentSame || !isDomAlive) {
+                shouldUpdate = true;
+            }
         }
     }
 
-    // B. 开始重绘 (Diff 逻辑)
-    // 重新提取纯净文本
-    const newTexts = Array.from(userQueries).map(q => 
-        q.innerText.replace(/[\r\n\s]+/g, ' ').trim()
-    ).filter(t => t.length > 0);
+    if (!shouldUpdate) {
+        applyContentWidth(CONFIG.contentWidth);
+        return;
+    }
 
-    // 记录状态
+    // --- 4. 重绘逻辑 (使用 Fragment 优化性能) ---
+    
+    // 如果 newTexts 还没生成过（因为前面走了长度不一致的快速分支），现在生成
+    if (!newTexts) {
+        newTexts = Array.from(userQueries).map(q => 
+            q.innerText.replace(/[\r\n\s]+/g, ' ').trim()
+        ).filter(t => t.length > 0);
+    }
+
     const previousScrollTop = listContainer.scrollTop;
     const isUserAtBottom = (listContainer.scrollHeight - listContainer.scrollTop - listContainer.clientHeight) < 20;
 
-    listContainer.innerHTML = ''; // 清空
+    listContainer.innerHTML = ''; 
+
+    // 【核心优化】创建文档片段，内存中操作，不触发布局抖动
+    const fragment = document.createDocumentFragment();
 
     newTexts.forEach((cleanText, index) => {
         const queryElement = userQueries[index]; 
@@ -207,22 +240,29 @@ function updateToc() {
 
         const item = document.createElement('div');
         item.className = 'toc-item';
-        item.textContent = `${index + 1}. ${cleanText}`; // 使用 textContent 更高效安全
+        item.textContent = `${index + 1}. ${cleanText}`; 
         item.title = queryElement.innerText; 
-        
-        // 存入 metadata 供下次比对
         item.dataset.rawText = cleanText; 
+        item.targetElement = queryElement; // 挂载引用
 
         item.onclick = () => {
-            queryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            queryElement.style.transition = 'background 0.5s';
-            queryElement.style.backgroundColor = 'rgba(255, 235, 59, 0.2)'; 
-            setTimeout(() => { queryElement.style.backgroundColor = 'transparent'; }, 1200);
+            if (queryElement && queryElement.isConnected) {
+                queryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                queryElement.style.transition = 'background 0.5s';
+                queryElement.style.backgroundColor = 'rgba(255, 235, 59, 0.2)'; 
+                setTimeout(() => { queryElement.style.backgroundColor = 'transparent'; }, 1200);
+            } else {
+                // 元素失效，强制刷新一次
+                updateToc();
+            }
         };
-        listContainer.appendChild(item);
+        
+        fragment.appendChild(item); // 插入片段，零重绘
     });
     
-    // 恢复位置
+    // 【核心优化】一次性上树
+    listContainer.appendChild(fragment); 
+    
     if (isUserAtBottom) {
         listContainer.scrollTop = listContainer.scrollHeight;
     } else {
