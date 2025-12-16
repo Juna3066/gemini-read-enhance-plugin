@@ -163,6 +163,14 @@ function bindEvents() {
         const item = e.target.closest('.toc-item');
         if (!item) return;
 
+        // 1. 移除所有其他项的 active 类
+        const currentActive = listContainer.querySelector('.toc-item.active');
+        if (currentActive) {
+            currentActive.classList.remove('active');
+        }
+        // 2. 给当前点击项添加 active 类
+        item.classList.add('active');
+
         const index = parseInt(item.dataset.index);
         const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
         const targetElement = userQueries[index];
@@ -178,7 +186,6 @@ function bindEvents() {
         }
     };
 }
-
 function applyContentWidth(widthPercent) {
     const containers = document.querySelectorAll('.conversation-container');
     containers.forEach(el => {

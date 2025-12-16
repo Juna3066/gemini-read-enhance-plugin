@@ -213,6 +213,13 @@ input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.1); }
     border-left-color: var(--accent-color);
 }
 
+.toc-item.active {
+    background-color: var(--accent-bg-active);
+    color: var(--accent-color);
+    border-left-color: var(--accent-color);
+    font-weight: 500;
+}
+
 /* --- 6. 最小化状态 --- */
 #my-gemini-toc.minimized {
     width: auto !important;
