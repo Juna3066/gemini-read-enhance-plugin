@@ -243,27 +243,36 @@ function applySidebarWidth(widthPx) {
     }
 }
 
-// --- 5. 核心大纲逻辑 ---
+// --- 5. 核心大纲逻辑 (含自动高亮) ---
 function updateToc() {
     const listContainer = document.getElementById(SELECTORS.LIST_ID);
     if (!listContainer) return;
 
     const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
 
+    // 1. 处理空状态
     if (userQueries.length === 0) {
         if (listContainer.children.length > 0) listContainer.innerHTML = '';
         return;
     }
 
+    // --- 准备数据 ---
     const currentItems = listContainer.children;
+    const oldLength = currentItems.length; // 记录旧长度
+    
+    // 获取当前被选中的索引（记忆状态）
+    const currentActiveItem = listContainer.querySelector('.toc-item.active');
+    let activeIndex = currentActiveItem ? parseInt(currentActiveItem.dataset.index) : -1;
+
+    // 2. 智能 Diff 检测
     let shouldUpdate = false;
     let newTexts = null;
 
-    if (currentItems.length !== userQueries.length) {
+    if (oldLength !== userQueries.length) {
         shouldUpdate = true;
     } else {
         newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
-        if (newTexts.length !== currentItems.length) {
+        if (newTexts.length !== oldLength) {
             shouldUpdate = true;
         } else {
             const currentTexts = Array.from(currentItems).map(item => item.dataset.rawText || "");
@@ -277,16 +286,26 @@ function updateToc() {
     }
 
     if (!shouldUpdate) {
-        // 确保样式变量被应用（处理切换页面场景）
         applyContentWidth(CONFIG.contentWidth);
         applyContentOffset(CONFIG.contentOffset);
         return;
     }
 
+    // --- 3. 计算目标高亮索引 (关键修复) ---
+    // 重新提取文本（如果上面没提取过）
     if (!newTexts) {
         newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
     }
+    
+    const newLength = newTexts.length;
 
+    // 逻辑：如果是新增记录（新长度 > 旧长度），则自动高亮最后一条
+    // 否则（长度没变，只是文字变了），保持原来的 activeIndex 不变
+    if (newLength > oldLength) {
+        activeIndex = newLength - 1; // 选中最后一个
+    }
+
+    // --- 4. 执行重绘 ---
     const previousScrollTop = listContainer.scrollTop;
     const isUserAtBottom = (listContainer.scrollHeight - listContainer.scrollTop - listContainer.clientHeight) < 20;
 
@@ -296,6 +315,12 @@ function updateToc() {
     newTexts.forEach((cleanText, index) => {
         const item = document.createElement('div');
         item.className = 'toc-item';
+        
+        // 【新增】如果在目标索引上，直接加上 active 类
+        if (index === activeIndex) {
+            item.classList.add('active');
+        }
+
         item.textContent = `${index + 1}. ${cleanText}`; 
         item.title = cleanText; 
         item.dataset.rawText = cleanText; 
@@ -306,7 +331,9 @@ function updateToc() {
     
     listContainer.appendChild(fragment); 
     
-    if (isUserAtBottom) {
+    // 恢复滚动位置
+    if (isUserAtBottom || newLength > oldLength) { 
+        // 如果之前在底部，或者有新内容增加，自动滚到底部看最新的
         listContainer.scrollTop = listContainer.scrollHeight;
     } else {
         listContainer.scrollTop = previousScrollTop;
