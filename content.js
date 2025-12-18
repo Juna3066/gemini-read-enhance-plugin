@@ -1,4 +1,4 @@
-// content.js - V3.0.0 (Ultimate Performance: Caching + Noise Reduction)
+// content.js - V3.1.0 (Fix: Scroll Spy Hot Zone)
 
 // --- 1. 常量与配置 (Constants & Config) ---
 const SELECTORS = {
@@ -33,17 +33,14 @@ let isClicking = false;
 let clickTimer = null;
 let tocObserver = null;
 
-// [优化 1] 文本缓存池：使用 WeakMap，DOM 节点被移除后自动释放内存
+// [优化 1] 文本缓存池
 const textCache = new WeakMap();
 
 // [优化 1] 极速文本提取（带缓存）
 function extractText(element) {
-    // 命中缓存直接返回，O(1) 复杂度
     if (textCache.has(element)) {
         return textCache.get(element);
     }
-    
-    // 未命中则计算，并存入缓存
     const text = element.textContent.replace(/[\r\n\s]+/g, ' ').trim();
     textCache.set(element, text);
     return text;
@@ -153,7 +150,6 @@ function bindEvents() {
     const btnSettings = sidebar.querySelector('.btn-settings');
     const btnToggle = sidebar.querySelector('.btn-toggle');
     
-    // Sliders
     const sliderContent = document.getElementById('slider-content');
     const valContent = document.getElementById('val-content');
     const sliderOffset = document.getElementById('slider-offset');
@@ -269,11 +265,15 @@ function applySidebarWidth(widthPx) {
     }
 }
 
-// --- 5. 滚动监听逻辑 ---
+// --- 5. 滚动监听逻辑 (Scroll Spy - Fixed Hot Zone) ---
 function initScrollSpy() {
     const options = {
         root: null, 
-        rootMargin: '-10% 0px -85% 0px', 
+        // [修复] 扩大热区到屏幕上半屏 (顶部往下 10% 到 50% 处)
+        // 逻辑：
+        // 1. 新元素从下往上越过 50% 线 -> 进入热区 -> Active (更灵敏)
+        // 2. 旧元素从上往下越过 50% 线 -> 离开热区 -> Deactive (更稳定，防止过早消失)
+        rootMargin: '-10% 0px -50% 0px', 
         threshold: 0
     };
 
@@ -284,9 +284,12 @@ function initScrollSpy() {
             const index = parseInt(entry.target.dataset.index);
             if (isNaN(index)) return;
 
+            // 分支 A: 进入热区 (Reading new)
             if (entry.isIntersecting) {
                 setActiveItem(index);
             } 
+            // 分支 B: 离开热区且向下跑了 (Reading old)
+            // 只有当元素完全掉到屏幕中线以下 (top > 0 且不在 intersect 中)，才回退
             else if (entry.boundingClientRect.top > 0) {
                 if (index > 0) {
                     setActiveItem(index - 1);
@@ -405,19 +408,14 @@ function init() {
     setTimeout(updateToc, 500); 
     setTimeout(updateToc, 2000);
 
-    // [优化 2] 观察者降噪：智能过滤无效 DOM 变动
-    // 只有当变动涉及 .user-query-container 时才触发更新
-    // 这屏蔽了 Gemini 生成回答时 99% 的 DOM 操作
+    // [优化 2] 观察者降噪
     const observer = new MutationObserver((mutations) => {
         let isRelevantChange = false;
 
         for (const mutation of mutations) {
-            // 1. 检查是否有新增/删除的节点
             if (mutation.type === 'childList') {
-                // 检查新增节点
                 for (const node of mutation.addedNodes) {
-                    if (node.nodeType === 1) { // 元素节点
-                        // 如果新增节点本身是提问，或者包含提问
+                    if (node.nodeType === 1) { 
                         if (node.matches && node.matches(SELECTORS.QUERY_CONTAINER) || 
                             node.querySelector && node.querySelector(SELECTORS.QUERY_CONTAINER)) {
                             isRelevantChange = true;
@@ -427,7 +425,6 @@ function init() {
                 }
                 if (isRelevantChange) break;
 
-                // 检查删除节点
                 for (const node of mutation.removedNodes) {
                     if (node.nodeType === 1) {
                         if (node.matches && node.matches(SELECTORS.QUERY_CONTAINER) || 
@@ -439,9 +436,7 @@ function init() {
                 }
                 if (isRelevantChange) break;
             }
-            // 2. 检查文本变动 (针对用户编辑提问的情况)
             else if (mutation.type === 'characterData' || mutation.type === 'subtree') {
-                // 如果变动的目标是提问容器的子孙
                 if (mutation.target.parentElement && 
                     mutation.target.parentElement.closest(SELECTORS.QUERY_CONTAINER)) {
                     isRelevantChange = true;
@@ -455,11 +450,10 @@ function init() {
         }
     });
 
-    // 依然需要 subtree: true，但回调里会进行过滤
     observer.observe(document.body, { 
         childList: true, 
         subtree: true, 
-        characterData: true // 监听文本变化
+        characterData: true 
     });
 }
 
