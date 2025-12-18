@@ -1,4 +1,4 @@
-// content.js - Ultimate Performance Version
+// content.js - Ultimate Performance Version + Horizontal Offset
 
 // --- 1. 常量与配置 ---
 const SELECTORS = {
@@ -9,12 +9,14 @@ const SELECTORS = {
 
 const DEFAULTS = {
     contentWidth: 60,
-    sidebarWidth: 260
+    sidebarWidth: 260,
+    contentOffset: 0 // 新增默认偏移量
 };
 
 const CONFIG = {
     contentWidth: parseInt(localStorage.getItem('gm_content_width')) || DEFAULTS.contentWidth,
     sidebarWidth: parseInt(localStorage.getItem('gm_sidebar_width')) || DEFAULTS.sidebarWidth,
+    contentOffset: parseInt(localStorage.getItem('gm_content_offset')) || DEFAULTS.contentOffset, // 读取偏移配置
     isSettingsOpen: false,
     isMinimized: false
 };
@@ -28,12 +30,10 @@ const ICONS = {
 
 // --- 2. 高级工具函数 ---
 
-// [优化] 文本提取：使用 textContent 避免回流
 function extractText(element) {
     return element.textContent.replace(/[\r\n\s]+/g, ' ').trim();
 }
 
-// [优化] 空闲调度防抖：优先使用 requestIdleCallback
 function idleDebounce(func, wait) {
     let timerId = null;
     return (...args) => {
@@ -78,6 +78,17 @@ function createSidebar() {
 
             <div class="control-group">
                 <div class="control-label-row">
+                    <span>正文位置</span>
+                    <button class="reset-btn" id="reset-offset" title="居中还原">${ICONS.reset}</button>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:10px; color:var(--text-secondary);">
+                    <span>← 左移</span><span id="val-offset">${CONFIG.contentOffset}px</span><span>右移 →</span>
+                </div>
+                <input type="range" id="slider-offset" min="-400" max="400" step="10" value="${CONFIG.contentOffset}">
+            </div>
+
+            <div class="control-group">
+                <div class="control-label-row">
                     <span>侧栏宽度</span>
                     <button class="reset-btn" id="reset-sidebar" title="恢复默认">${ICONS.reset}</button>
                 </div>
@@ -93,18 +104,27 @@ function createSidebar() {
     
     document.body.appendChild(sidebar);
     applyContentWidth(CONFIG.contentWidth);
+    applyContentOffset(CONFIG.contentOffset); // 初始化应用偏移
     applySidebarWidth(CONFIG.sidebarWidth);
     bindEvents();
 }
 
-// --- 4. 事件绑定 (含 Event Delegation) ---
+// --- 4. 事件绑定 ---
 function bindEvents() {
     const sidebar = document.getElementById(SELECTORS.SIDEBAR_ID);
     const settingsPanel = document.getElementById('settings-panel');
     const btnSettings = sidebar.querySelector('.btn-settings');
     const btnToggle = sidebar.querySelector('.btn-toggle');
+    
+    // 宽幅控件
     const sliderContent = document.getElementById('slider-content');
     const valContent = document.getElementById('val-content');
+    
+    // 偏移控件 (新增)
+    const sliderOffset = document.getElementById('slider-offset');
+    const valOffset = document.getElementById('val-offset');
+
+    // 侧栏控件
     const sliderSidebar = document.getElementById('slider-sidebar');
     const valSidebar = document.getElementById('val-sidebar');
 
@@ -132,7 +152,7 @@ function bindEvents() {
     btnToggle.onclick = toggleFunc;
     sidebar.onclick = (e) => { if (CONFIG.isMinimized) toggleFunc(e); };
 
-    // 宽度调整
+    // --- 逻辑：宽幅 ---
     const updateContent = (val) => {
         valContent.innerText = val + '%';
         applyContentWidth(val);
@@ -145,6 +165,22 @@ function bindEvents() {
         updateContent(DEFAULTS.contentWidth);
     };
 
+    // --- 逻辑：水平偏移 (新增) ---
+    const updateOffset = (val) => {
+        // 显示正负号，让用户更直观
+        const sign = val > 0 ? '+' : '';
+        valOffset.innerText = `${sign}${val}px`;
+        applyContentOffset(val);
+        localStorage.setItem('gm_content_offset', val);
+        CONFIG.contentOffset = val;
+    };
+    sliderOffset.oninput = (e) => updateOffset(e.target.value);
+    document.getElementById('reset-offset').onclick = () => {
+        sliderOffset.value = DEFAULTS.contentOffset;
+        updateOffset(DEFAULTS.contentOffset);
+    };
+
+    // --- 逻辑：侧栏宽度 ---
     const updateSidebar = (val) => {
         valSidebar.innerText = val + 'px';
         applySidebarWidth(val);
@@ -157,18 +193,15 @@ function bindEvents() {
         updateSidebar(DEFAULTS.sidebarWidth);
     };
 
-    // [优化] 列表点击使用事件委托 (Event Delegation)
+    // 列表点击事件委托 (含高亮)
     const listContainer = document.getElementById(SELECTORS.LIST_ID);
     listContainer.onclick = (e) => {
         const item = e.target.closest('.toc-item');
         if (!item) return;
 
-        // 1. 移除所有其他项的 active 类
+        // 高亮逻辑
         const currentActive = listContainer.querySelector('.toc-item.active');
-        if (currentActive) {
-            currentActive.classList.remove('active');
-        }
-        // 2. 给当前点击项添加 active 类
+        if (currentActive) currentActive.classList.remove('active');
         item.classList.add('active');
 
         const index = parseInt(item.dataset.index);
@@ -181,16 +214,25 @@ function bindEvents() {
             targetElement.style.backgroundColor = 'rgba(255, 235, 59, 0.2)'; 
             setTimeout(() => { targetElement.style.backgroundColor = 'transparent'; }, 1200);
         } else {
-            // 目标丢失，强制刷新
             updateToc();
         }
     };
 }
+
+// 辅助函数：应用正文宽幅
 function applyContentWidth(widthPercent) {
     const containers = document.querySelectorAll('.conversation-container');
     containers.forEach(el => {
         el.style.setProperty('max-width', widthPercent + '%', 'important');
-        el.style.setProperty('margin', '0 auto', 'important');
+    });
+}
+
+// 辅助函数：应用水平偏移 (新增)
+function applyContentOffset(offsetPx) {
+    const containers = document.querySelectorAll('.conversation-container');
+    containers.forEach(el => {
+        // 使用 CSS 变量，性能更高
+        el.style.setProperty('--content-offset', offsetPx + 'px');
     });
 }
 
@@ -201,20 +243,18 @@ function applySidebarWidth(widthPx) {
     }
 }
 
-// --- 5. 核心大纲逻辑 (极致优化版) ---
+// --- 5. 核心大纲逻辑 ---
 function updateToc() {
     const listContainer = document.getElementById(SELECTORS.LIST_ID);
     if (!listContainer) return;
 
     const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
 
-    // 1. 处理空状态
     if (userQueries.length === 0) {
         if (listContainer.children.length > 0) listContainer.innerHTML = '';
         return;
     }
 
-    // 2. 智能 Diff 检测
     const currentItems = listContainer.children;
     let shouldUpdate = false;
     let newTexts = null;
@@ -222,15 +262,13 @@ function updateToc() {
     if (currentItems.length !== userQueries.length) {
         shouldUpdate = true;
     } else {
-        // [优化] 使用 extractText
         newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
-
         if (newTexts.length !== currentItems.length) {
             shouldUpdate = true;
         } else {
             const currentTexts = Array.from(currentItems).map(item => item.dataset.rawText || "");
             const isContentSame = currentTexts.every((t, i) => t === newTexts[i]);
-            const isDomAlive = userQueries[0].isConnected; // 活性检测
+            const isDomAlive = userQueries[0].isConnected; 
 
             if (!isContentSame || !isDomAlive) {
                 shouldUpdate = true;
@@ -239,11 +277,12 @@ function updateToc() {
     }
 
     if (!shouldUpdate) {
+        // 确保样式变量被应用（处理切换页面场景）
         applyContentWidth(CONFIG.contentWidth);
+        applyContentOffset(CONFIG.contentOffset);
         return;
     }
 
-    // 3. 执行重绘
     if (!newTexts) {
         newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
     }
@@ -252,18 +291,15 @@ function updateToc() {
     const isUserAtBottom = (listContainer.scrollHeight - listContainer.scrollTop - listContainer.clientHeight) < 20;
 
     listContainer.innerHTML = ''; 
-    
-    // [优化] 使用 DocumentFragment
     const fragment = document.createDocumentFragment();
 
     newTexts.forEach((cleanText, index) => {
         const item = document.createElement('div');
         item.className = 'toc-item';
-        // [优化] 使用 textContent
         item.textContent = `${index + 1}. ${cleanText}`; 
         item.title = cleanText; 
         item.dataset.rawText = cleanText; 
-        item.dataset.index = index; // 供事件委托使用
+        item.dataset.index = index; 
 
         fragment.appendChild(item);
     });
@@ -277,13 +313,13 @@ function updateToc() {
     }
 
     applyContentWidth(CONFIG.contentWidth);
+    applyContentOffset(CONFIG.contentOffset);
 }
 
 // --- 6. 初始化 ---
 function init() {
     createSidebar();
     
-    // [优化] 使用空闲防抖
     const efficientUpdate = idleDebounce(updateToc, 1000);
 
     setTimeout(updateToc, 500); 
