@@ -1,6 +1,6 @@
-// content.js - Ultimate Performance Version + Horizontal Offset
+// content.js - V3.0.0 (Ultimate Performance: Caching + Noise Reduction)
 
-// --- 1. 常量与配置 ---
+// --- 1. 常量与配置 (Constants & Config) ---
 const SELECTORS = {
     QUERY_CONTAINER: 'span.user-query-container',
     SIDEBAR_ID: 'my-gemini-toc',
@@ -10,13 +10,13 @@ const SELECTORS = {
 const DEFAULTS = {
     contentWidth: 60,
     sidebarWidth: 260,
-    contentOffset: 0 // 新增默认偏移量
+    contentOffset: 0
 };
 
 const CONFIG = {
     contentWidth: parseInt(localStorage.getItem('gm_content_width')) || DEFAULTS.contentWidth,
     sidebarWidth: parseInt(localStorage.getItem('gm_sidebar_width')) || DEFAULTS.sidebarWidth,
-    contentOffset: parseInt(localStorage.getItem('gm_content_offset')) || DEFAULTS.contentOffset, // 读取偏移配置
+    contentOffset: parseInt(localStorage.getItem('gm_content_offset')) || DEFAULTS.contentOffset,
     isSettingsOpen: false,
     isMinimized: false
 };
@@ -28,12 +28,28 @@ const ICONS = {
     reset: `↺`
 };
 
-// --- 2. 高级工具函数 ---
+// --- 2. 全局状态与工具 (State & Utils) ---
+let isClicking = false;
+let clickTimer = null;
+let tocObserver = null;
 
+// [优化 1] 文本缓存池：使用 WeakMap，DOM 节点被移除后自动释放内存
+const textCache = new WeakMap();
+
+// [优化 1] 极速文本提取（带缓存）
 function extractText(element) {
-    return element.textContent.replace(/[\r\n\s]+/g, ' ').trim();
+    // 命中缓存直接返回，O(1) 复杂度
+    if (textCache.has(element)) {
+        return textCache.get(element);
+    }
+    
+    // 未命中则计算，并存入缓存
+    const text = element.textContent.replace(/[\r\n\s]+/g, ' ').trim();
+    textCache.set(element, text);
+    return text;
 }
 
+// 空闲调度防抖
 function idleDebounce(func, wait) {
     let timerId = null;
     return (...args) => {
@@ -48,7 +64,26 @@ function idleDebounce(func, wait) {
     };
 }
 
-// --- 3. UI 构建 ---
+// 核心：设置高亮项
+function setActiveItem(index) {
+    const listContainer = document.getElementById(SELECTORS.LIST_ID);
+    if (!listContainer) return;
+
+    const currentActive = listContainer.querySelector('.toc-item.active');
+    if (currentActive && parseInt(currentActive.dataset.index) === index) return;
+
+    if (currentActive) currentActive.classList.remove('active');
+    
+    const newItem = listContainer.querySelector(`.toc-item[data-index="${index}"]`);
+    if (newItem) {
+        newItem.classList.add('active');
+        if (!isClicking) {
+            newItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+}
+
+// --- 3. UI 构建 (UI Rendering) ---
 function createSidebar() {
     if (document.getElementById(SELECTORS.SIDEBAR_ID)) return;
 
@@ -82,7 +117,9 @@ function createSidebar() {
                     <button class="reset-btn" id="reset-offset" title="居中还原">${ICONS.reset}</button>
                 </div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:10px; color:var(--text-secondary);">
-                    <span>← 左移</span><span id="val-offset">${CONFIG.contentOffset}px</span><span>右移 →</span>
+                    <span>← 左移</span>
+                    <span id="val-offset">${CONFIG.contentOffset > 0 ? '+' : ''}${CONFIG.contentOffset}px</span>
+                    <span>右移 →</span>
                 </div>
                 <input type="range" id="slider-offset" min="-400" max="400" step="10" value="${CONFIG.contentOffset}">
             </div>
@@ -104,38 +141,32 @@ function createSidebar() {
     
     document.body.appendChild(sidebar);
     applyContentWidth(CONFIG.contentWidth);
-    applyContentOffset(CONFIG.contentOffset); // 初始化应用偏移
+    applyContentOffset(CONFIG.contentOffset); 
     applySidebarWidth(CONFIG.sidebarWidth);
     bindEvents();
 }
 
-// --- 4. 事件绑定 ---
+// --- 4. 事件绑定 (Event Binding) ---
 function bindEvents() {
     const sidebar = document.getElementById(SELECTORS.SIDEBAR_ID);
     const settingsPanel = document.getElementById('settings-panel');
     const btnSettings = sidebar.querySelector('.btn-settings');
     const btnToggle = sidebar.querySelector('.btn-toggle');
     
-    // 宽幅控件
+    // Sliders
     const sliderContent = document.getElementById('slider-content');
     const valContent = document.getElementById('val-content');
-    
-    // 偏移控件 (新增)
     const sliderOffset = document.getElementById('slider-offset');
     const valOffset = document.getElementById('val-offset');
-
-    // 侧栏控件
     const sliderSidebar = document.getElementById('slider-sidebar');
     const valSidebar = document.getElementById('val-sidebar');
 
-    // 设置开关
     btnSettings.onclick = () => {
         CONFIG.isSettingsOpen = !CONFIG.isSettingsOpen;
         settingsPanel.style.display = CONFIG.isSettingsOpen ? 'block' : 'none';
         btnSettings.classList.toggle('active', CONFIG.isSettingsOpen);
     };
 
-    // 最小化
     const toggleFunc = (e) => {
         e && e.stopPropagation();
         CONFIG.isMinimized = !CONFIG.isMinimized;
@@ -152,7 +183,7 @@ function bindEvents() {
     btnToggle.onclick = toggleFunc;
     sidebar.onclick = (e) => { if (CONFIG.isMinimized) toggleFunc(e); };
 
-    // --- 逻辑：宽幅 ---
+    // --- Slider Logic ---
     const updateContent = (val) => {
         valContent.innerText = val + '%';
         applyContentWidth(val);
@@ -165,9 +196,7 @@ function bindEvents() {
         updateContent(DEFAULTS.contentWidth);
     };
 
-    // --- 逻辑：水平偏移 (新增) ---
     const updateOffset = (val) => {
-        // 显示正负号，让用户更直观
         const sign = val > 0 ? '+' : '';
         valOffset.innerText = `${sign}${val}px`;
         applyContentOffset(val);
@@ -180,7 +209,6 @@ function bindEvents() {
         updateOffset(DEFAULTS.contentOffset);
     };
 
-    // --- 逻辑：侧栏宽度 ---
     const updateSidebar = (val) => {
         valSidebar.innerText = val + 'px';
         applySidebarWidth(val);
@@ -193,16 +221,17 @@ function bindEvents() {
         updateSidebar(DEFAULTS.sidebarWidth);
     };
 
-    // 列表点击事件委托 (含高亮)
+    // --- 列表点击委托 ---
     const listContainer = document.getElementById(SELECTORS.LIST_ID);
     listContainer.onclick = (e) => {
         const item = e.target.closest('.toc-item');
         if (!item) return;
 
-        // 高亮逻辑
-        const currentActive = listContainer.querySelector('.toc-item.active');
-        if (currentActive) currentActive.classList.remove('active');
-        item.classList.add('active');
+        isClicking = true;
+        if (clickTimer) clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => { isClicking = false; }, 1000); 
+
+        setActiveItem(parseInt(item.dataset.index));
 
         const index = parseInt(item.dataset.index);
         const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
@@ -214,12 +243,11 @@ function bindEvents() {
             targetElement.style.backgroundColor = 'rgba(255, 235, 59, 0.2)'; 
             setTimeout(() => { targetElement.style.backgroundColor = 'transparent'; }, 1200);
         } else {
-            updateToc();
+            updateToc(); 
         }
     };
 }
 
-// 辅助函数：应用正文宽幅
 function applyContentWidth(widthPercent) {
     const containers = document.querySelectorAll('.conversation-container');
     containers.forEach(el => {
@@ -227,11 +255,9 @@ function applyContentWidth(widthPercent) {
     });
 }
 
-// 辅助函数：应用水平偏移 (新增)
 function applyContentOffset(offsetPx) {
     const containers = document.querySelectorAll('.conversation-container');
     containers.forEach(el => {
-        // 使用 CSS 变量，性能更高
         el.style.setProperty('--content-offset', offsetPx + 'px');
     });
 }
@@ -243,28 +269,51 @@ function applySidebarWidth(widthPx) {
     }
 }
 
-// --- 5. 核心大纲逻辑 (含自动高亮) ---
+// --- 5. 滚动监听逻辑 ---
+function initScrollSpy() {
+    const options = {
+        root: null, 
+        rootMargin: '-10% 0px -85% 0px', 
+        threshold: 0
+    };
+
+    tocObserver = new IntersectionObserver((entries) => {
+        if (isClicking) return;
+
+        entries.forEach(entry => {
+            const index = parseInt(entry.target.dataset.index);
+            if (isNaN(index)) return;
+
+            if (entry.isIntersecting) {
+                setActiveItem(index);
+            } 
+            else if (entry.boundingClientRect.top > 0) {
+                if (index > 0) {
+                    setActiveItem(index - 1);
+                }
+            }
+        });
+    }, options);
+}
+
+// --- 6. 核心大纲生成逻辑 ---
 function updateToc() {
     const listContainer = document.getElementById(SELECTORS.LIST_ID);
     if (!listContainer) return;
 
     const userQueries = document.querySelectorAll(SELECTORS.QUERY_CONTAINER);
 
-    // 1. 处理空状态
     if (userQueries.length === 0) {
         if (listContainer.children.length > 0) listContainer.innerHTML = '';
         return;
     }
 
-    // --- 准备数据 ---
     const currentItems = listContainer.children;
-    const oldLength = currentItems.length; // 记录旧长度
+    const oldLength = currentItems.length;
     
-    // 获取当前被选中的索引（记忆状态）
     const currentActiveItem = listContainer.querySelector('.toc-item.active');
     let activeIndex = currentActiveItem ? parseInt(currentActiveItem.dataset.index) : -1;
 
-    // 2. 智能 Diff 检测
     let shouldUpdate = false;
     let newTexts = null;
 
@@ -285,77 +334,133 @@ function updateToc() {
         }
     }
 
-    if (!shouldUpdate) {
-        applyContentWidth(CONFIG.contentWidth);
-        applyContentOffset(CONFIG.contentOffset);
-        return;
-    }
+    if (shouldUpdate) {
+        if (!newTexts) {
+            newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
+        }
+        const newLength = newTexts.length;
 
-    // --- 3. 计算目标高亮索引 (关键修复) ---
-    // 重新提取文本（如果上面没提取过）
-    if (!newTexts) {
-        newTexts = Array.from(userQueries).map(extractText).filter(t => t.length > 0);
-    }
-    
-    const newLength = newTexts.length;
-
-    // 逻辑：如果是新增记录（新长度 > 旧长度），则自动高亮最后一条
-    // 否则（长度没变，只是文字变了），保持原来的 activeIndex 不变
-    if (newLength > oldLength) {
-        activeIndex = newLength - 1; // 选中最后一个
-    }
-
-    // --- 4. 执行重绘 ---
-    const previousScrollTop = listContainer.scrollTop;
-    const isUserAtBottom = (listContainer.scrollHeight - listContainer.scrollTop - listContainer.clientHeight) < 20;
-
-    listContainer.innerHTML = ''; 
-    const fragment = document.createDocumentFragment();
-
-    newTexts.forEach((cleanText, index) => {
-        const item = document.createElement('div');
-        item.className = 'toc-item';
-        
-        // 【新增】如果在目标索引上，直接加上 active 类
-        if (index === activeIndex) {
-            item.classList.add('active');
+        if (newLength > oldLength) {
+            activeIndex = newLength - 1;
         }
 
-        item.textContent = `${index + 1}. ${cleanText}`; 
-        item.title = cleanText; 
-        item.dataset.rawText = cleanText; 
-        item.dataset.index = index; 
+        const previousScrollTop = listContainer.scrollTop;
+        const isUserAtBottom = (listContainer.scrollHeight - listContainer.scrollTop - listContainer.clientHeight) < 20;
 
-        fragment.appendChild(item);
-    });
-    
-    listContainer.appendChild(fragment); 
-    
-    // 恢复滚动位置
-    if (isUserAtBottom || newLength > oldLength) { 
-        // 如果之前在底部，或者有新内容增加，自动滚到底部看最新的
-        listContainer.scrollTop = listContainer.scrollHeight;
+        listContainer.innerHTML = ''; 
+        const fragment = document.createDocumentFragment();
+
+        if (tocObserver) tocObserver.disconnect();
+
+        newTexts.forEach((cleanText, index) => {
+            const item = document.createElement('div');
+            item.className = 'toc-item';
+            
+            if (index === activeIndex) {
+                item.classList.add('active');
+            }
+
+            item.textContent = `${index + 1}. ${cleanText}`; 
+            item.title = cleanText; 
+            item.dataset.rawText = cleanText; 
+            item.dataset.index = index; 
+
+            fragment.appendChild(item);
+
+            const queryEl = userQueries[index];
+            if (queryEl) {
+                queryEl.dataset.index = index; 
+                if (tocObserver) tocObserver.observe(queryEl);
+            }
+        });
+        
+        listContainer.appendChild(fragment); 
+        
+        if (isUserAtBottom || newLength > oldLength) {
+            listContainer.scrollTop = listContainer.scrollHeight;
+        } else {
+            listContainer.scrollTop = previousScrollTop;
+        }
     } else {
-        listContainer.scrollTop = previousScrollTop;
+        if (tocObserver) {
+            tocObserver.disconnect();
+            userQueries.forEach((el, index) => {
+                el.dataset.index = index;
+                tocObserver.observe(el);
+            });
+        }
     }
 
     applyContentWidth(CONFIG.contentWidth);
     applyContentOffset(CONFIG.contentOffset);
 }
 
-// --- 6. 初始化 ---
+// --- 7. 初始化 ---
 function init() {
     createSidebar();
-    
+    initScrollSpy();
+
     const efficientUpdate = idleDebounce(updateToc, 1000);
 
     setTimeout(updateToc, 500); 
     setTimeout(updateToc, 2000);
 
-    const observer = new MutationObserver(() => {
-        efficientUpdate();
+    // [优化 2] 观察者降噪：智能过滤无效 DOM 变动
+    // 只有当变动涉及 .user-query-container 时才触发更新
+    // 这屏蔽了 Gemini 生成回答时 99% 的 DOM 操作
+    const observer = new MutationObserver((mutations) => {
+        let isRelevantChange = false;
+
+        for (const mutation of mutations) {
+            // 1. 检查是否有新增/删除的节点
+            if (mutation.type === 'childList') {
+                // 检查新增节点
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType === 1) { // 元素节点
+                        // 如果新增节点本身是提问，或者包含提问
+                        if (node.matches && node.matches(SELECTORS.QUERY_CONTAINER) || 
+                            node.querySelector && node.querySelector(SELECTORS.QUERY_CONTAINER)) {
+                            isRelevantChange = true;
+                            break;
+                        }
+                    }
+                }
+                if (isRelevantChange) break;
+
+                // 检查删除节点
+                for (const node of mutation.removedNodes) {
+                    if (node.nodeType === 1) {
+                        if (node.matches && node.matches(SELECTORS.QUERY_CONTAINER) || 
+                            node.querySelector && node.querySelector(SELECTORS.QUERY_CONTAINER)) {
+                            isRelevantChange = true;
+                            break;
+                        }
+                    }
+                }
+                if (isRelevantChange) break;
+            }
+            // 2. 检查文本变动 (针对用户编辑提问的情况)
+            else if (mutation.type === 'characterData' || mutation.type === 'subtree') {
+                // 如果变动的目标是提问容器的子孙
+                if (mutation.target.parentElement && 
+                    mutation.target.parentElement.closest(SELECTORS.QUERY_CONTAINER)) {
+                    isRelevantChange = true;
+                    break;
+                }
+            }
+        }
+
+        if (isRelevantChange) {
+            efficientUpdate();
+        }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+
+    // 依然需要 subtree: true，但回调里会进行过滤
+    observer.observe(document.body, { 
+        childList: true, 
+        subtree: true, 
+        characterData: true // 监听文本变化
+    });
 }
 
 init();

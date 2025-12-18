@@ -39,11 +39,8 @@ body[class*="dark"] #my-gemini-toc {
 
 /* --- 1. 核心布局 --- */
 .conversation-container {
-    /* 增加 transform 过渡，但设快一点以跟手 */
     transition: max-width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), transform 0.1s linear;
     margin: 0 auto !important; 
-    
-    /* --- 绑定水平偏移变量 --- */
     transform: translateX(var(--content-offset, 0px));
 }
 
@@ -79,6 +76,11 @@ code-block {
     opacity: 0;
     animation: fadeIn 0.3s forwards;
     color: var(--text-primary);
+
+    /* --- [优化 4] CSS 渲染性能优化 --- */
+    /* 告诉浏览器这个区域是独立的，优先计算布局，且内容可跳过 */
+    content-visibility: auto; 
+    contain: layout style paint; 
 }
 
 @keyframes fadeIn { to { opacity: 1; } }
