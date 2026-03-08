@@ -2,7 +2,7 @@
 
 Gemini Read Enhance
 
-Gemini 对话大纲与宽屏工具：为 Google Gemini 提供沉浸式宽屏阅读体验，并自动生成侧边栏对话大纲，支持一键导航与自定义宽度。
+Gemini 对话大纲与宽屏工具（google chrome 浏览器插件）：为 Google Gemini 提供沉浸式宽屏阅读体验，并自动生成侧边栏对话大纲，支持一键导航与自定义宽度。
 
 ![demo](./demo.png)
 
