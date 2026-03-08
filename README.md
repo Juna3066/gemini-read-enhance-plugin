@@ -7,9 +7,7 @@ Gemini 对话大纲与宽屏工具：为 Google Gemini 提供沉浸式宽屏阅�
 ![demo](./demo.png)
 
 
-## chrome浏览器如何安装插件？
-
-<img width="823" height="651" alt="image" src="https://github.com/user-attachments/assets/32adc73b-34f5-43b5-8c18-ef392fb5b524" />
+## chrome浏览器如何安装该插件？
 
 - [下载已发布的zip包](https://github.com/Juna3066/gemini-read-enhance-plugin/releases/tag/v3.1.0)
 - 解压得到gemini-read-enhance文件夹
@@ -17,6 +15,7 @@ Gemini 对话大纲与宽屏工具：为 Google Gemini 提供沉浸式宽屏阅�
 - 开启右侧**开发者模式**
 - 点击加载未打包的扩展程序,选择gemini-read-enhance文件夹
 
+<img width="823" height="651" alt="image" src="https://github.com/user-attachments/assets/32adc73b-34f5-43b5-8c18-ef392fb5b524" />
 
 ## 配合SingleFile插件使用（可选）
 
